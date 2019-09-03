@@ -78,6 +78,10 @@
  /**************************************
   * Defines
   **************************************/
+#if 1 // TTK
+#define EB_THREAD_COUNT_MIN_CORE               48
+#define EB_THREAD_COUNT_FACTOR                  2
+#endif
 
 #define EB_EncodeInstancesTotalCount                    1
 #define EB_CandidateInitCount                           1
@@ -1828,6 +1832,11 @@ void load_default_buffer_configuration_settings(
 
     unsigned int lp_count = get_num_cores();
     unsigned int core_count = lp_count;
+
+
+    unsigned int totalThreadCount;
+    unsigned int threadUnit;
+
 #if defined(_WIN32) || defined(__linux__)
     if (sequence_control_set_ptr->static_config.target_socket != -1)
         core_count /= num_groups;
@@ -1850,6 +1859,25 @@ void load_default_buffer_configuration_settings(
         core_count = lp_count;
 #endif
 
+#if 1 // TTK
+
+    // Thread count computation
+ /*   if (sequence_control_set_ptr->static_config.threadCount != 0)
+        totalThreadCount = sequenceControlSetPtr->staticConfig.threadCount;
+    else*/
+        totalThreadCount = core_count * EB_THREAD_COUNT_FACTOR;
+
+    if (totalThreadCount < EB_THREAD_COUNT_MIN_CORE * EB_THREAD_COUNT_FACTOR) {
+        core_count = EB_THREAD_COUNT_MIN_CORE;
+        totalThreadCount = core_count * EB_THREAD_COUNT_FACTOR;
+    }
+
+    if (totalThreadCount % EB_THREAD_COUNT_MIN_CORE) {
+        totalThreadCount = (totalThreadCount + EB_THREAD_COUNT_MIN_CORE - 1)
+            / EB_THREAD_COUNT_MIN_CORE * EB_THREAD_COUNT_MIN_CORE;
+    }
+    threadUnit = totalThreadCount / EB_THREAD_COUNT_MIN_CORE;
+#endif
     // ME segments
     sequence_control_set_ptr->me_segment_row_count_array[0] = me_seg_h;
     sequence_control_set_ptr->me_segment_row_count_array[1] = me_seg_h;
@@ -1905,6 +1933,7 @@ void load_default_buffer_configuration_settings(
     sequence_control_set_ptr->enc_dec_fifo_init_count                     = 300;
 
     //#====================== Processes number ======================
+#if 0 // TTK 
     sequence_control_set_ptr->total_process_init_count = 0;
     sequence_control_set_ptr->total_process_init_count += (sequence_control_set_ptr->picture_analysis_process_init_count            = MAX(MIN(15, core_count), core_count / 6));
     sequence_control_set_ptr->total_process_init_count += (sequence_control_set_ptr->motion_estimation_process_init_count           = MAX(MIN(20, core_count), core_count / 3));
@@ -1915,6 +1944,19 @@ void load_default_buffer_configuration_settings(
 
     sequence_control_set_ptr->total_process_init_count += 6; // single processes count
     SVT_LOG("Number of logical cores available: %u\nNumber of PPCS %u\n", core_count, input_pic);
+#else
+
+    sequence_control_set_ptr->total_process_init_count = 0;
+    sequence_control_set_ptr->total_process_init_count += sequence_control_set_ptr->picture_analysis_process_init_count = threadUnit * 4;
+    sequence_control_set_ptr->total_process_init_count += sequence_control_set_ptr->motion_estimation_process_init_count = threadUnit * 8;
+    sequence_control_set_ptr->total_process_init_count += sequence_control_set_ptr->source_based_operations_process_init_count = threadUnit * 2;
+    sequence_control_set_ptr->total_process_init_count += sequence_control_set_ptr->mode_decision_configuration_process_init_count = threadUnit * 2;
+    sequence_control_set_ptr->total_process_init_count += sequence_control_set_ptr->entropy_coding_process_init_count = threadUnit * 4;
+    sequence_control_set_ptr->total_process_init_count += 6; // single processes count
+    sequence_control_set_ptr->total_process_init_count += sequence_control_set_ptr->enc_dec_process_init_count =
+        totalThreadCount - sequence_control_set_ptr->total_process_init_count;
+    SVT_LOG("Number of logical cores available: %u\nNumber of PPCS %u\n", core_count, input_pic);
+#endif
 
     return;
 
